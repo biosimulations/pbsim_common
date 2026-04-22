@@ -1,0 +1,155 @@
+[project]
+name = "pbsim-common"
+version = "0.1.2"
+description = "A set of commonly used runtime edges for process bigraph that are useful."
+readme = "README.md"
+authors = [{ name = "Ezequiel Valencia", email = "evalencia@uchc.edu" }]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    # "polars>=1.35.2",
+    "process-bigraph>=1.0.5",
+    "bigraph-schema>=1.0.1",
+    # "python-libsbml>=5.20.5",
+    "copasi-basico",
+    "tellurium>=2.2.11.1",
+    "libroadrunner",
+    # "vivarium-interface>=0.0.5",
+    "python-copasi",
+]
+
+[project.urls]
+Homepage = "https://github.com/biosimulations/biosim-registry/"
+Repository = "https://github.com/biosimulations/biosim-registry/"
+Documentation = "https://github.com/biosimulations/biosim-registry/"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.2.0",
+    "pre-commit>=2.20.0",
+    "tox-uv>=1.11.3",
+    "deptry>=0.23.0",
+    "mypy>=0.991",
+    "pandas-stubs",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=1.0.0,<2",
+    "ruff>=0.11.5",
+    "mkdocs>=1.4.2",
+    "mkdocs-material>=8.5.10",
+    "mkdocstrings[python]>=0.26.1",
+    "docker"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pbsim_common"]
+
+[tool.mypy]
+files = ["pbsim_common"]
+disallow_untyped_defs = true
+disallow_any_unimported = false
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["process_bigraph.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "COPASI.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "roadrunner.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tellurium.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "basico.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "compose_api_client.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bigraph_schema.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["bigraph-schema"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    # flake8-2020
+    "YTT",
+    # flake8-bandit
+    "S",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-debugger
+    "T10",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # mccabe
+    "C90",
+    # pycodestyle
+    "E", "W",
+    # pyflakes
+    "F",
+    # pygrep-hooks
+    "PGH",
+    # pyupgrade
+    "UP",
+    # ruff
+    "RUF",
+    # tryceratops
+    "TRY",
+]
+ignore = [
+    # LineTooLong
+    "E501",
+    # DoNotAssignLambda
+    "E731",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.coverage.report]
+skip_empty = true
+
+[tool.coverage.run]
+branch = true
+source = ["pbsim_common"]
+
+[tool.uv.sources]
+# biocompose = { git = "https://github.com/vivarium-collective/biocompose", rev = "numerical-types" }
+# biocompose =  { path = "../biocompose", editable = true }
