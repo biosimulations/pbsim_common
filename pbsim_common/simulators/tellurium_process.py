@@ -27,6 +27,9 @@ class TelluriumStep(Step):
         self.species_ids = list(self.rr.getFloatingSpeciesIds())
         self.reaction_ids = list(self.rr.getReactionIds())
         self._species_index = {sid: i for i, sid in enumerate(self.species_ids)}
+        # A species an assignment rule defines is computed, not state: RoadRunner refuses to set it.
+        ruled = set(self.rr.getAssignmentRuleIds())
+        self._settable = {sid for sid in self.species_ids if sid not in ruled}
 
     # ------------------------------------------------
     # process-bigraph API
@@ -42,13 +45,16 @@ class TelluriumStep(Step):
         }
 
     def set_road_runner_incoming_values(self, inputs: Any) -> None:
-        spec_data = inputs.get("species_counts") or inputs.get("species_concentrations") or {}
+        # Counts are amounts (RoadRunner's `S1`); concentrations are `[S1]`. Setting a concentration as an amount
+        # scales it by the compartment's volume, which changes the run whenever that volume is not 1.
+        counts = inputs.get("species_counts")
+        spec_data = counts or inputs.get("species_concentrations") or {}
+        as_amounts = bool(counts)
 
         # 2) Set incoming values on the model
-        print(spec_data)
         for sid, value in spec_data.items():
-            if sid in self._species_index:
-                self.rr.setValue(sid, float(value))
+            if sid in self._settable:
+                self.rr.setValue(sid if as_amounts else f"[{sid}]", float(value))
 
 
 class TelluriumUTCStep(TelluriumStep):
@@ -95,20 +101,22 @@ class TelluriumUTCStep(TelluriumStep):
         time_idx = norm_to_index["time"]
         time = tc.values[:, time_idx].tolist()
 
-        # 4) Species trajectories
+        # 4) Species trajectories (the time course's `[S1]` columns are concentrations)
         species_cols: dict[str, int] = {}
         for sid in self.species_ids:
             idx = norm_to_index.get(sid)
             if idx is not None:
                 species_cols[sid] = idx
+        # the species to set back (as concentrations) when reading fluxes: not those an assignment rule defines
+        settable_cols = {sid: idx for sid, idx in species_cols.items() if sid in self._settable}
 
         # 5) Reaction flux time series
         flux_json: dict[Any, Any] = {rid: [] for rid in self.reaction_ids}
 
         # For each time point, set state and query reaction rates
         for row in range(tc.shape[0]):
-            for sid, idx in species_cols.items():
-                self.rr.setValue(sid, float(tc.values[row, idx]))
+            for sid, idx in settable_cols.items():
+                self.rr.setValue(f"[{sid}]", float(tc.values[row, idx]))
 
             rates = self.rr.getReactionRates()
             for j, rid in enumerate(self.reaction_ids):
@@ -116,8 +124,8 @@ class TelluriumUTCStep(TelluriumStep):
 
         # 6) Restore last state (final row of the timecourse)
         last_row = tc.shape[0] - 1
-        for sid, idx in species_cols.items():
-            self.rr.setValue(sid, float(tc.values[last_row, idx]))
+        for sid, idx in settable_cols.items():
+            self.rr.setValue(f"[{sid}]", float(tc.values[last_row, idx]))
 
         # 7) Send update — structured for easy comparison / aggregation
         result = {
