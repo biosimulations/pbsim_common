@@ -1924,7 +1924,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "process-bigraph", specifier = ">=1.0.5" },
     { name = "python-copasi" },
-    { name = "pyvcell", extras = ["native", "ode"], marker = "extra == 'vcell'", specifier = ">=0.5.0" },
+    { name = "pyvcell", extras = ["native", "ode"], marker = "extra == 'vcell'", specifier = ">=0.5.1" },
     { name = "tellurium", specifier = ">=2.2.11.1" },
 ]
 provides-extras = ["vcell"]
@@ -2557,7 +2557,7 @@ wheels = [
 
 [[package]]
 name = "pyvcell"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
@@ -2566,9 +2566,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/89/5d3c5e4ab9bf28396944e2397614c6adfca79112f17e9ad20b7b5a5524a6/pyvcell-0.5.0.tar.gz", hash = "sha256:8d4573cf876eb0652c99b3c6ce653440973db9ce470e1c4101de12e2e5da1546", size = 219289, upload-time = "2026-10-24T12:38:08.606Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/32/cccf10b3fb77f64538be433fdc59ce5099be19ccf0f209278b80e5dc0c9a/pyvcell-0.5.1.tar.gz", hash = "sha256:39b2a76c64f3e17f829279120bce1edd88705a10bd6fe4403f7c1d468b0c34c9", size = 219613, upload-time = "2026-10-24T13:23:09.084Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/d5/47efd106362e4941abde119e64e67811376e16d9aa203fec268a7baf314e/pyvcell-0.5.0-py3-none-any.whl", hash = "sha256:032fa08cc70db0b51e0df7ac8638d8ca7c6ed12a3f58a3aed6768968f291d5f4", size = 456236, upload-time = "2026-10-24T12:38:07.119Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/31/1858ab6913f398e1d0ec9a4aa7ec4a0e00fade1f8f5ec5022d5e688aec97/pyvcell-0.5.1-py3-none-any.whl", hash = "sha256:0c383dc6850136a17bd1bbab45990a369d4fcf0f88f784e77d703967668da0da", size = 456601, upload-time = "2026-10-24T13:23:07.541Z" },
 ]
 
 [package.optional-dependencies]

@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # VCellUTCStep: VCell's Sundials ODE solver through pyvcell (libvcell writes the solver input, pyvcell-odesolver solves)
-vcell = ["pyvcell[native,ode]>=0.5.0"]
+vcell = ["pyvcell[native,ode]>=0.5.1"]
 
 [project.urls]
 Homepage = "https://github.com/biosimulations/biosim-registry/"
