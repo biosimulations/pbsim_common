@@ -1,6 +1,4 @@
 import importlib.metadata
-from pathlib import Path
-from typing import Any
 
 import pytest
 from bigraph_schema import allocate_core
@@ -9,7 +7,7 @@ from bigraph_schema.core import Core
 # from biocompose import standard_types
 from pbsim_common import standard_types
 from pbsim_common.comparison import MSEComparison
-from pbsim_common.simulators import TelluriumUTCStep, CopasiUTCStep
+from pbsim_common.simulators import CopasiUTCStep, TelluriumUTCStep, VCellUTCStep
 
 
 @pytest.fixture(scope="function")
@@ -19,7 +17,8 @@ def fully_registered_core() -> Core:
     manual = {
         "pbsim_common.simulators.tellurium_process.TelluriumUTCStep": TelluriumUTCStep,
         "pbsim_common.simulators.copasi_process.CopasiUTCStep": CopasiUTCStep,
-        "pbsim_common.comparison.MSEComparison": MSEComparison
+        "pbsim_common.simulators.vcell_process.VCellUTCStep": VCellUTCStep,
+        "pbsim_common.comparison.MSEComparison": MSEComparison,
     }
     for k, i in standard_types.items():
         core.register_type(k, i)

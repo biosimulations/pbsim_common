@@ -1,6 +1,6 @@
 [project]
 name = "pbsim-common"
-version = "0.1.3.dev0"
+version = "0.1.3.dev1"
 description = "A set of commonly used runtime edges for process bigraph that are useful."
 readme = "README.md"
 authors = [{ name = "Ezequiel Valencia", email = "evalencia@uchc.edu" }]
@@ -18,6 +18,10 @@ dependencies = [
     # "vivarium-interface>=0.0.5",
     "python-copasi",
 ]
+
+[project.optional-dependencies]
+# VCellUTCStep: VCell's Sundials ODE solver through pyvcell (libvcell writes the solver input, pyvcell-odesolver solves)
+vcell = ["pyvcell[native,ode]>=0.5.0"]
 
 [project.urls]
 Homepage = "https://github.com/biosimulations/biosim-registry/"
