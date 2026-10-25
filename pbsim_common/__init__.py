@@ -1,8 +1,10 @@
 standard_types = {
+    # A result replaces the one before it: a step that fires again (its inputs changed) must not append its rows
+    # to the previous result's, which is what bigraph-schema's list apply does.
     "numeric_result": {
-        "time": "list[float]",
-        "columns": "list[string]",
-        "values": "list[list[float]]",
+        "time": "overwrite[list[float]]",
+        "columns": "overwrite[list[string]]",
+        "values": "overwrite[list[list[float]]]",
         # 'n_spacial_dimensions': 'tuple[int, int]'
     },
     "numeric_results": "map[numeric_result]",
