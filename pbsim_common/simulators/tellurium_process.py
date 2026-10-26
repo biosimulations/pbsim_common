@@ -30,6 +30,10 @@ class TelluriumStep(Step):
         # A species an assignment rule defines is computed, not state: RoadRunner refuses to set it.
         ruled = set(self.rr.getAssignmentRuleIds())
         self._settable = {sid for sid in self.species_ids if sid not in ruled}
+        # Report every species, as concentrations: RoadRunner's default selection has only the floating ones, which
+        # leaves out a boundary species (often one an assignment rule defines) that a SED-ML report asks for.
+        boundary = [sid for sid in self.rr.getBoundarySpeciesIds() if sid not in self._species_index]
+        self.rr.timeCourseSelections = ["time", *(f"[{sid}]" for sid in [*self.species_ids, *boundary])]
 
     # ------------------------------------------------
     # process-bigraph API
