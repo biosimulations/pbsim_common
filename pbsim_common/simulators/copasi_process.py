@@ -55,6 +55,14 @@ def _set_initial_concentrations(changes: Any, dm: Any) -> None:
         model.updateInitialValues(references)
 
 
+def _with_every_species(tc: DataFrame, species: dict[str, Any]) -> DataFrame:
+    """The time course with a column for every species. COPASI's leaves out a species whose value cannot change (in no
+    reaction, or only a modifier of one), which a SED-ML report may still ask for: its concentration, the same at
+    every time point."""
+    missing = {sbml_id: float(metab.getConcentration()) for sbml_id, metab in species.items() if sbml_id not in tc}
+    return tc.assign(**missing) if missing else tc
+
+
 class BaseCopasi:
     cmodel = None
     dm = None
@@ -134,7 +142,9 @@ class CopasiUTCStep(Step, BaseCopasi):
     def update(self, inputs: Any) -> dict[str, Any]:
         # Apply incoming concentrations
         spec_data = inputs.get("counts", {}) or {}
-        changes = [(self.species[sbml_id], float(value)) for sbml_id, value in spec_data.items() if sbml_id in self.species]
+        changes = [
+            (self.species[sbml_id], float(value)) for sbml_id, value in spec_data.items() if sbml_id in self.species
+        ]
 
         if changes:
             _set_initial_concentrations(changes, self.dm)
@@ -148,6 +158,7 @@ class CopasiUTCStep(Step, BaseCopasi):
             use_sbml_id=True,
             model=self.dm,
         )
+        tc = _with_every_species(tc, self.species)
         if "output_dir" in self.config and self.config["output_dir"] != "":
             tc.to_csv(os.path.join(self.config["output_dir"], "results.csv"), index=False)
 
@@ -202,7 +213,9 @@ class CopasiSteadyStateStep(Step, BaseCopasi):
         # 1) Prefer counts, otherwise concentrations (keys are SBML IDs)
         spec_data = inputs.get("counts") or inputs.get("concentrations") or {}
 
-        changes = [(self.species[sbml_id], float(value)) for sbml_id, value in spec_data.items() if sbml_id in self.species]
+        changes = [
+            (self.species[sbml_id], float(value)) for sbml_id, value in spec_data.items() if sbml_id in self.species
+        ]
 
         if changes:
             _set_initial_concentrations(changes, self.dm)
@@ -287,7 +300,9 @@ class CopasiUTCProcess(Process, BaseCopasi):
         # --- 1) Determine incoming species map (SBML IDs)
         incoming = inputs.get("species_counts") or inputs.get("species_concentrations") or {}
 
-        changes = [(self.species[sbml_id], float(value)) for sbml_id, value in incoming.items() if sbml_id in self.species]
+        changes = [
+            (self.species[sbml_id], float(value)) for sbml_id, value in incoming.items() if sbml_id in self.species
+        ]
 
         if changes:
             _set_initial_concentrations(changes, self.dm)

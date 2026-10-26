@@ -11,3 +11,5 @@ bug fixed here:
 | BIOMD0000000020 | no species and no reactions, only rate rules on parameters (COPASI) |
 | BIOMD0000000143 | 20 species whose display names repeat across compartments (COPASI) |
 | BIOMD0000000241 | species but no reactions (COPASI) |
+| BIOMD0000000248 | `Pi`, only a modifier, so its value never changes: COPASI's time course leaves it out (2026-10-26) |
+| BIOMD0000000262 | `EGF`, a boundary species an assignment rule defines: RoadRunner's default selection leaves it out (2026-10-26) |

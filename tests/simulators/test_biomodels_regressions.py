@@ -54,3 +54,21 @@ def test_tellurium_writes_concentrations_back_as_concentrations(fully_registered
     columns = [c.strip("[]") for c in untouched.colnames[1:]]
     ours = numpy.array(result["values"])[:, [result["columns"].index(c) for c in columns]]
     numpy.testing.assert_allclose(ours, numpy.asarray(untouched)[:, 1:], rtol=1e-6, atol=1e-12)
+
+
+def test_tellurium_reports_boundary_species(fully_registered_core: Core) -> None:
+    """`EGF` is a boundary species an assignment rule defines; RoadRunner's default selection left it out, so a SED-ML
+    report asking for it had nothing to compare (biomodels-curated-300 run 4, 2026-10-26)."""
+    step = TelluriumUTCStep(_config("BIOMD0000000262"), core=fully_registered_core)
+    result = step.update(step.initial_state())["result"]
+    assert "EGF" in result["columns"]
+    assert len(result["columns"]) == len(result["values"][0])
+
+
+def test_copasi_reports_species_whose_value_cannot_change(fully_registered_core: Core) -> None:
+    """`Pi` is only a modifier: COPASI's time course left it out (biomodels-curated-300 run 4, 2026-10-26)."""
+    step = CopasiUTCStep(_config("BIOMD0000000248"), core=fully_registered_core)
+    result = step.update(step.initial_state())["result"]
+    pi = [row[result["columns"].index("Pi")] for row in result["values"]]
+    assert pi == [0.5] * len(result["time"])
+    assert set(step.species_ids) <= set(result["columns"])
