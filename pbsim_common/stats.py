@@ -56,7 +56,9 @@ class StatsTool(Step):
         }
 
     def outputs(self) -> dict[str, str]:
-        return {"stats_result": "array"}
+        # a statistic is a result: it replaces the last (an array update is otherwise added, and a list read as sparse
+        # index updates)
+        return {"stats_result": "overwrite[array]"}
 
 
 class SumOfSquaresTool(StatsTool):

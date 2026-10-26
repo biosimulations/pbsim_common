@@ -254,6 +254,7 @@ class CopasiUTCProcess(Process, BaseCopasi):
         # ---- Sim parameters ----
         self.time = float(self.config.get("time", 1.0))
         self.intervals = int(self.config.get("intervals", 10))
+        self.elapsed = 0.0  # the model time at the start of the next interval
 
     # -----------------------------------------------------------------
     # initial state
@@ -271,10 +272,12 @@ class CopasiUTCProcess(Process, BaseCopasi):
         }
 
     def outputs(self) -> dict[str, str]:
+        # Each update reports the state at the end of the interval, not a change, so every port overwrites:
+        # bigraph-schema adds float updates and appends list updates.
         return {
-            "species_concentrations": "map[float]",  # SBML IDs
-            "fluxes": "map[float]",
-            "time": "list[float]",
+            "species_concentrations": "map[overwrite[float]]",  # SBML IDs
+            "fluxes": "map[overwrite[float]]",
+            "time": "overwrite[list[float]]",  # this interval's time points
         }
 
     # -----------------------------------------------------------------
@@ -299,8 +302,9 @@ class CopasiUTCProcess(Process, BaseCopasi):
             model=self.dm,
         )
 
-        # Extract time points
-        time = tc["Time"].tolist() if "Time" in tc.columns else []
+        # The interval's time points (basico indexes the time course by time), from the model's start
+        time = [self.elapsed + float(t) for t in tc.index.to_list()]
+        self.elapsed += interval
 
         # --- 3) Read back final state: export SBML IDs ----
         species_concentrations = {sbml_id: float(metab.getConcentration()) for sbml_id, metab in self.species.items()}

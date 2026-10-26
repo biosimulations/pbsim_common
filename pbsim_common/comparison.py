@@ -20,7 +20,9 @@ class ComparisonTool(Step):
         }
 
     def outputs(self) -> dict[str, str]:
-        return {"comparison_result": "map[map[map[float]]]"}
+        # a comparison is a result, not a change: each value replaces the last (float updates are otherwise added),
+        # per leaf, so a comparison of other results keeps theirs
+        return {"comparison_result": "map[map[map[overwrite[float]]]]"}
 
 
 # class SubtractComparison(ComparisonTool):
