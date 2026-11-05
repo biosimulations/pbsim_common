@@ -12,6 +12,7 @@ from bigraph_schema import Core, allocate_core
 from pandas import DataFrame
 from process_bigraph import Process, Step
 
+from pbsim_common.sbml_values import SedmlValues, read_sedml_values
 from pbsim_common.utils import model_path_resolution
 
 
@@ -63,10 +64,26 @@ def _with_every_species(tc: DataFrame, species: dict[str, Any]) -> DataFrame:
     return tc.assign(**missing) if missing else tc
 
 
+def _as_sedml_reads(tc: DataFrame, species: dict[str, Any], values: SedmlValues) -> DataFrame:
+    """The time course as SED-ML reads the model (pbsim_common.sbml_values): a species with only substance units as
+    its amount, its concentration times its compartment's size at that time (COPASI's column when the size varies,
+    else the constant size). COPASI's own columns already hold every non-fixed parameter and compartment."""
+    amounts = {}
+    for sbml_id in sorted(values.amount_species & set(tc.columns)):
+        compartment = values.compartment_of.get(sbml_id, "")
+        if compartment in tc.columns:
+            size: Any = tc[compartment]
+        else:
+            size = float(species[sbml_id].getCompartment().getValue())
+        amounts[sbml_id] = tc[sbml_id] * size
+    return tc.assign(**amounts) if amounts else tc
+
+
 class BaseCopasi:
     cmodel = None
     dm = None
     species: dict[str, Any]
+    sedml_values: SedmlValues
     species_ids: Any
     reaction_ids: Any
     sbml_to_name: dict[Any, Any]
@@ -76,7 +93,8 @@ class BaseCopasi:
         model_source = self.config["model_source"]
 
         # ---- Load COPASI model ----
-        self.dm = load_model(model_path_resolution(model_source))
+        path = model_path_resolution(model_source)
+        self.dm = load_model(path)
         if self.dm is None:
             error_msg = (
                 f"load_model({model_source!r}) returned None. "
@@ -85,6 +103,7 @@ class BaseCopasi:
             raise RuntimeError(error_msg)
 
         self.cmodel = self.dm.getModel()
+        self.sedml_values = read_sedml_values(path)
 
         # External canonical IDs: SBML IDs. A model may have no species (only rate rules on parameters).
         self.species = _species_by_sbml_id(self.dm)
@@ -158,7 +177,7 @@ class CopasiUTCStep(Step, BaseCopasi):
             use_sbml_id=True,
             model=self.dm,
         )
-        tc = _with_every_species(tc, self.species)
+        tc = _as_sedml_reads(_with_every_species(tc, self.species), self.species, self.sedml_values)
         if "output_dir" in self.config and self.config["output_dir"] != "":
             tc.to_csv(os.path.join(self.config["output_dir"], "results.csv"), index=False)
 

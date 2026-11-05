@@ -11,7 +11,7 @@ dependencies = [
     # "polars>=1.35.2",
     "process-bigraph>=1.0.5",
     "bigraph-schema>=1.0.1",
-    # "python-libsbml>=5.20.5",
+    "python-libsbml>=5.20.5",
     "copasi-basico",
     "tellurium>=2.2.11.1",
     "libroadrunner",

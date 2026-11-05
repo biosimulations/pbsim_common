@@ -9,6 +9,7 @@ from pandas import DataFrame
 from process_bigraph import Step
 from roadrunner import RoadRunner
 
+from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.utils import model_path_resolution
 
 
@@ -17,8 +18,9 @@ class TelluriumStep(Step):
         model_source = self.config["model_source"]
 
         # ----- Minimal Tellurium load (SBML) -----
+        path = model_path_resolution(model_source)
         try:
-            self.rr: RoadRunner = te.loadSBMLModel(model_path_resolution(model_source))
+            self.rr: RoadRunner = te.loadSBMLModel(path)
         except Exception as e:
             err_msg = f"Could not load SBML model: {model_source}\n{e}"
             raise RuntimeError(err_msg) from e
@@ -33,7 +35,14 @@ class TelluriumStep(Step):
         # Report every species, as concentrations: RoadRunner's default selection has only the floating ones, which
         # leaves out a boundary species (often one an assignment rule defines) that a SED-ML report asks for.
         boundary = [sid for sid in self.rr.getBoundarySpeciesIds() if sid not in self._species_index]
-        self.rr.timeCourseSelections = ["time", *(f"[{sid}]" for sid in [*self.species_ids, *boundary])]
+        # what SED-ML reads (pbsim_common.sbml_values): a species' amount when it has only substance units, else its
+        # concentration; and every parameter and compartment that can vary in time
+        values = read_sedml_values(path)
+        self._selection = {
+            sid: sid if sid in values.amount_species else f"[{sid}]" for sid in [*self.species_ids, *boundary]
+        }
+        varying = [v for v in (*values.varying_parameters, *values.varying_compartments) if v not in self._selection]
+        self.rr.timeCourseSelections = ["time", *self._selection.values(), *varying]
 
     # ------------------------------------------------
     # process-bigraph API
@@ -120,7 +129,7 @@ class TelluriumUTCStep(TelluriumStep):
         # For each time point, set state and query reaction rates
         for row in range(tc.shape[0]):
             for sid, idx in settable_cols.items():
-                self.rr.setValue(f"[{sid}]", float(tc.values[row, idx]))
+                self.rr.setValue(self._selection[sid], float(tc.values[row, idx]))
 
             rates = self.rr.getReactionRates()
             for j, rid in enumerate(self.reaction_ids):
@@ -129,7 +138,7 @@ class TelluriumUTCStep(TelluriumStep):
         # 6) Restore last state (final row of the timecourse)
         last_row = tc.shape[0] - 1
         for sid, idx in settable_cols.items():
-            self.rr.setValue(f"[{sid}]", float(tc.values[last_row, idx]))
+            self.rr.setValue(self._selection[sid], float(tc.values[last_row, idx]))
 
         # 7) Send update — structured for easy comparison / aggregation
         result = {

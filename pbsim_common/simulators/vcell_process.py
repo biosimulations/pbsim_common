@@ -15,6 +15,7 @@ import numpy
 from pandas import DataFrame
 from process_bigraph import Step
 
+from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.utils import model_path_resolution
 
 SIMULATION_NAME = "pbsim_utc"
@@ -51,7 +52,8 @@ class VCellUTCStep(Step):
         try:
             # read as UTF-8 here: COPASI and libroadrunner set the C locale when loaded, which makes Python's default
             # text encoding ASCII, and SBML often carries non-ASCII names and notes
-            with open(model_path_resolution(model_source), encoding="utf-8") as f:
+            path = model_path_resolution(model_source)
+            with open(path, encoding="utf-8") as f:
                 sbml = f.read()
             self.biomodel = vc.load_sbml_str(sbml, assume_units="sbml_l2")
         except Exception as e:
@@ -61,6 +63,15 @@ class VCellUTCStep(Step):
             err_msg = f"Expected one application from VCell's SBML import, got {len(self.biomodel.applications)}"
             raise RuntimeError(err_msg)
         self.application = self.biomodel.applications[0]
+        # SED-ML reads a species with only substance units as an amount (pbsim_common.sbml_values); VCell reports
+        # concentrations and imports only compartments of constant size, so the amount is the concentration times
+        # the size the model sets
+        values = read_sedml_values(path)
+        self._amount_scale = {
+            sid: values.sizes[c]
+            for sid in values.amount_species
+            if (c := values.compartment_of.get(sid, "")) in values.sizes
+        }
 
         self.time = float(self.config.get("time", 1.0))
         self.n_points = int(self.config.get("n_points", 2))
@@ -114,7 +125,8 @@ class VCellUTCStep(Step):
 
         time = [float(t) for t in ode_result.times]
         columns = list(ode_result.variable_names)
-        values = ode_result.values.tolist()
+        scale = [self._amount_scale.get(name, 1.0) for name in columns]
+        values = [[v * f for v, f in zip(row, scale, strict=True)] for row in ode_result.values.tolist()]
         if self.config.get("output_dir"):
             DataFrame(data=values, columns=columns).assign(time=time)[["time", *columns]].to_csv(
                 os.path.join(self.config["output_dir"], "results.csv"), index=False
