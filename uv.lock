@@ -1890,6 +1890,7 @@ dependencies = [
     { name = "pandas" },
     { name = "process-bigraph" },
     { name = "python-copasi" },
+    { name = "python-libsbml" },
     { name = "tellurium" },
 ]
 
@@ -1924,6 +1925,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "process-bigraph", specifier = ">=1.0.5" },
     { name = "python-copasi" },
+    { name = "python-libsbml", specifier = ">=5.20.5" },
     { name = "pyvcell", extras = ["native", "ode"], marker = "extra == 'vcell'", specifier = ">=0.5.1" },
     { name = "tellurium", specifier = ">=2.2.11.1" },
 ]
