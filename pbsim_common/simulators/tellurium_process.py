@@ -9,16 +9,17 @@ from pandas import DataFrame
 from process_bigraph import Step
 from roadrunner import RoadRunner
 
+from pbsim_common.options import UTCOptions, model_in_file, model_in_text, select_columns
 from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.utils import model_path_resolution
 
 
 class TelluriumStep(Step):
     def _tellurium_initialize(self) -> None:
-        model_source = self.config["model_source"]
+        self._tellurium_load(model_path_resolution(self.config["model_source"]), self.config["model_source"])
 
+    def _tellurium_load(self, path: str, model_source: str) -> None:
         # ----- Minimal Tellurium load (SBML) -----
-        path = model_path_resolution(model_source)
         try:
             self.rr: RoadRunner = te.loadSBMLModel(path)
         except Exception as e:
@@ -76,35 +77,72 @@ class TelluriumUTCStep(TelluriumStep):
         "time": "float",
         "n_points": "integer",
         "output_dir": "string",
+        # optional, as viva-tellurium names them (pbsim_common.options)
+        "output_times": "maybe[list[float]]",
+        "selections": "maybe[list[string]]",
+        "absolute_tolerance": "maybe[float]",
+        "relative_tolerance": "maybe[float]",
     }
 
     def initialize(self, config: Any) -> None:
         self._tellurium_initialize()
+        self.options = UTCOptions.from_config(self.config, "TelluriumUTCStep")
+        self._apply_tolerances()
 
         # ----- sim parameters -----
         self.time = float(self.config.get("time", 1.0))
         self.n_points = int(self.config.get("n_points", 2))
-        if self.n_points < 2:
+        if self.n_points < 2 and self.options.output_times is None:
             err_msg = f"TelluriumUTCStep: n_points must be >= 2, got {self.n_points}"
             raise ValueError(err_msg)
 
+    def _apply_tolerances(self) -> None:
+        if self.options.absolute_tolerance is not None:
+            self.rr.integrator.absolute_tolerance = self.options.absolute_tolerance
+        if self.options.relative_tolerance is not None:
+            self.rr.integrator.relative_tolerance = self.options.relative_tolerance
+
+    def inputs(self) -> dict[str, str]:
+        return {**super().inputs(), "model_in": "maybe[string]"}
+
     def outputs(self) -> dict[str, str]:
         return {"result": "numeric_result"}
+
+    def _load_model_in(self, state: dict[str, Any]) -> None:
+        """Replace the model with the SBML text on `model_in`, when it carries one other than the loaded model's."""
+        text = model_in_text(state, getattr(self, "_model_in", None))
+        if text is not None:
+            with model_in_file(text) as path:
+                self._tellurium_load(path, "model_in")
+            self._model_in = text
+            self._apply_tolerances()
 
     # ------------------------------------------------
     # update logic
     # ------------------------------------------------
     def update(self, state: dict[str, Any], interval: Any = None) -> dict[str, Any]:
+        # 0) A model on `model_in` replaces the configured one
+        self._load_model_in(state)
         # 1) Choose source
         # 2) Update species concentrations using Tellurium's setValue
         self.set_road_runner_incoming_values(state)
-        output_file = (
-            None if self.config["output_dir"] == "" else os.path.join(self.config["output_dir"], "results.csv")
-        )
+        output_dir = self.config.get("output_dir", "")
+        output_file = None if output_dir == "" else os.path.join(output_dir, "results.csv")
 
-        # 3) Run simulation: from 0 -> self.time, n_points samples
-        tc = self.rr.simulate(0, self.time, self.n_points, output_file=output_file)
-        tc = DataFrame(data=tc.tolist(), columns=tc.colnames) if output_file is None else pandas.read_csv(output_file)
+        # 3) Run simulation: from 0 -> self.time, n_points samples, or at the given output times
+        if self.options.output_times is None:
+            tc = self.rr.simulate(0, self.time, self.n_points, output_file=output_file)
+            tc = (
+                DataFrame(data=tc.tolist(), columns=tc.colnames)
+                if output_file is None
+                else pandas.read_csv(output_file)
+            )
+        else:
+            tc = self.rr.simulate(times=self.options.output_times)
+            tc = DataFrame(data=tc.tolist(), columns=tc.colnames)
+        tc = select_columns(tc, self.options.selections, strip="[]")
+        if output_file is not None and self.options.writes_own_csv:
+            tc.to_csv(output_file, index=False)
         colnames: list[str] = tc.columns.tolist()
 
         # Build a mapping from *normalized* column names to indices.
