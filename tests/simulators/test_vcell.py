@@ -11,6 +11,7 @@ import pandas
 import pytest
 from bigraph_schema import Core
 
+from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.simulators import CopasiUTCStep, VCellUTCStep
 from tests.fixtures.utils import root_dir_path, run_experiment
 
@@ -19,14 +20,6 @@ needs_vcell = pytest.mark.skipif(
     reason="needs the vcell extra (pyvcell[native,ode])",
 )
 RESOURCES = root_dir_path() / "resources"
-
-
-def _refuses_systems_without_odes() -> bool:
-    try:
-        from pyvcell.vcml import vcml_ode_simulation
-    except ModuleNotFoundError:
-        return False
-    return hasattr(vcml_ode_simulation, "_num_equations")
 
 
 MODELS = RESOURCES / "biomodels"
@@ -66,7 +59,9 @@ def test_vcell_matches_copasi_on_the_phase_cycle(fully_registered_core: Core) ->
     assert len(vcell) == len(copasi) == 51
     assert numpy.allclose(vcell["time"], numpy.linspace(0, 10, 51))
     species = ["PX", "PY", "PZ", "X", "Y", "Z"]
-    assert sorted(c for c in vcell.columns if c != "time") == species
+    # every species, and the parameters a rule sets, as Tellurium reports them (pbsim_common.sbml_values)
+    varying = read_sedml_values(str(RESOURCES / "phase_cycle.sbml")).varying_parameters
+    assert sorted(c for c in vcell.columns if c != "time") == sorted([*species, *varying])
     _assert_close(vcell, copasi, rel=1e-4, columns=species)
 
 
@@ -82,9 +77,9 @@ def test_vcell_agrees_with_copasi_by_sbml_id(fully_registered_core: Core, model:
     vcell = pandas.DataFrame(vcell_result["values"], columns=vcell_result["columns"])
     copasi = pandas.DataFrame(copasi_result["values"], columns=copasi_result["columns"])
     assert len(vcell_result["time"]) == 11
-    assert set(vcell.columns) <= set(vcell_step.species_ids)
-    assert set(vcell.columns) <= set(copasi.columns)
-    _assert_close(vcell, copasi, rel=1e-3, columns=list(vcell.columns))
+    varying = read_sedml_values(str(MODELS / f"{model}.xml")).varying_parameters
+    assert set(vcell_step.species_ids) <= set(vcell.columns) <= {*vcell_step.species_ids, *varying}
+    _assert_close(vcell, copasi, rel=1e-3, columns=[c for c in vcell.columns if c in copasi.columns])
 
 
 _UNITLESS_L3 = """<?xml version="1.0" encoding="UTF-8"?>
@@ -121,12 +116,16 @@ def test_a_model_without_units_is_read_in_sbml_level_2_units(fully_registered_co
 
 
 @needs_vcell
-@pytest.mark.skipif(
-    not _refuses_systems_without_odes(),
-    reason="this pyvcell lets the solver crash the process on a system with no equations (fixed in virtualcell/pyvcell#66)",
-)
-def test_a_model_without_odes_fails_with_a_message(fully_registered_core: Core) -> None:
-    """BIOMD0000000241's species never change (no reactions): VCell's math has no equations to solve."""
-    step = VCellUTCStep(_config(MODELS / "BIOMD0000000241.xml"), core=fully_registered_core)
-    with pytest.raises(RuntimeError, match="no ODEs to solve"):
-        step.update(step.initial_state())
+def test_rate_rules_are_solved(fully_registered_core: Core) -> None:
+    """BIOMD0000000241's species change only through rate rules (it has no reactions). pyvcell's model has no rate
+    rules, so VCell once found no equations to solve; the step restores them (pbsim_common.vcell_math)."""
+    vcell_step = VCellUTCStep(_config(MODELS / "BIOMD0000000241.xml"), core=fully_registered_core)
+    copasi_step = CopasiUTCStep(_config(MODELS / "BIOMD0000000241.xml"), core=fully_registered_core)
+    vcell_result = vcell_step.update(vcell_step.initial_state())["result"]
+    copasi_result = copasi_step.update(copasi_step.initial_state())["result"]
+    vcell = pandas.DataFrame(vcell_result["values"], columns=vcell_result["columns"])
+    copasi = pandas.DataFrame(copasi_result["values"], columns=copasi_result["columns"])
+    species = list(vcell_step.species_ids)
+    assert set(species) <= set(vcell.columns)
+    assert (vcell[species].iloc[-1] != vcell[species].iloc[0]).any(), "the species change"
+    _assert_close(vcell, copasi, rel=1e-3, columns=species)

@@ -21,7 +21,13 @@ dependencies = [
 
 [project.optional-dependencies]
 # VCellUTCStep: VCell's Sundials ODE solver through pyvcell (libvcell writes the solver input, pyvcell-odesolver solves)
-vcell = ["pyvcell[native,ode]>=0.5.1"]
+vcell = [
+    "pyvcell[native,ode]>=0.5.1",
+    # imported directly (pbsim_common.vcell_math, VCellUTCStep); 0.0.25 has VCell's import of SBML L3V2's features
+    "libvcell>=0.0.25",
+    "lxml>=6.1.0",
+    "numexpr>=2.10",
+]
 
 [project.urls]
 Homepage = "https://github.com/biosimulations/biosim-registry/"
