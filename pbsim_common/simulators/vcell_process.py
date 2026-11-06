@@ -4,11 +4,14 @@ VCell imports the SBML in the model's own units; units the model leaves undefine
 defaults (mol, litre, m², m, s), and nothing is converted, so results come back in the model's units, as COPASI's
 and Tellurium's do. VCell's Combined solver runs CVODE, or IDA when the math has fast systems.
 
-VCell outputs the variables it solves: a species that VCell's math makes a constant or a function (one an assignment
-rule defines, or a boundary species) is not among the result's columns.
+VCell's solver outputs the variables it solves. A species or a varying parameter or compartment that VCell's math makes
+a constant or a function (one an assignment rule defines, or a boundary species) is evaluated from the math over the
+solved time course (pbsim_common.vcell_math), so the step reports what COPASI's and Tellurium's do.
 """
 
 import os
+import tempfile
+from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy
@@ -17,8 +20,18 @@ from process_bigraph import Step
 
 from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.utils import model_path_resolution
+from pbsim_common.vcell_math import (
+    derived_columns,
+    fast_reactions,
+    kept_elements,
+    math_expressions,
+    math_names,
+    restore,
+)
 
 SIMULATION_NAME = "pbsim_utc"
+#: the variable VCell solves when the math has no ODEs (vcell-core's OdeFileWriter.NO_ODE_PLACEHOLDER)
+NO_ODE_PLACEHOLDER = "__vcell_no_ode__"
 
 
 def _pyvcell_vcml() -> Any:
@@ -38,6 +51,33 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _import_sbml(sbml: str) -> str:
+    """VCell's import of the SBML as VCML, as ``pyvcell.vcml.load_sbml_str(sbml, assume_units="sbml_l2")`` makes it
+    before reading it into pyvcell's model."""
+    import libvcell
+    from pyvcell.vcml.utils import _resolve_undefined_units
+
+    resolved, _ = _resolve_undefined_units(sbml, "sbml_l2")
+    with tempfile.TemporaryDirectory() as tempdir:
+        path = Path(tempdir) / "model.vcml"
+        ok, message = libvcell.sbml_to_vcml(sbml_content=resolved, vcml_file_path=path)
+        if not ok:
+            raise ValueError(message)
+        return path.read_text(encoding="utf-8")
+
+
+def _regenerated(vcml: str) -> str:
+    """The VCML as VCell rewrites it, with the math generated from the model it describes."""
+    import libvcell
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        path = Path(tempdir) / "model.vcml"
+        ok, message = libvcell.vcml_to_vcml(vcml_content=vcml, vcml_file_path=path)
+        if not ok:
+            raise ValueError(message)
+        return path.read_text(encoding="utf-8")
+
+
 class VCellUTCStep(Step):
     config_schema: ClassVar[dict[str, str]] = {
         "model_source": "string",
@@ -55,7 +95,12 @@ class VCellUTCStep(Step):
             path = model_path_resolution(model_source)
             with open(path, encoding="utf-8") as f:
                 sbml = f.read()
-            self.biomodel = vc.load_sbml_str(sbml, assume_units="sbml_l2")
+            vcml = _import_sbml(sbml)
+            # pyvcell's model has no rules or events and no fast reactions: keep VCell's to restore in each document
+            # the solver reads
+            self._kept = kept_elements(vcml)
+            self._fast = fast_reactions(vcml)
+            self.biomodel = vc.load_vcml_str(vcml)
         except Exception as e:
             err_msg = f"VCell could not import the SBML model: {model_source}\n{e}"
             raise RuntimeError(err_msg) from e
@@ -67,6 +112,10 @@ class VCellUTCStep(Step):
         # concentrations and imports only compartments of constant size, so the amount is the concentration times
         # the size the model sets
         values = read_sedml_values(path)
+        #: what COPASI and Tellurium report (pbsim_common.sbml_values): every species, and the varying parameters
+        #: and compartments
+        self._reported = [*values.compartment_of, *values.varying_parameters]
+        self._reported_compartments = list(values.varying_compartments)
         self._amount_scale = {
             sid: values.sizes[c]
             for sid in values.amount_species
@@ -116,17 +165,32 @@ class VCellUTCStep(Step):
 
     def update(self, inputs: Any) -> dict[str, Any]:
         vc = _pyvcell_vcml()
+        from pyvcell.vcml.utils import to_vcml_str
+
         self._set_initial_conditions(inputs)
         try:
-            ode_result = vc.simulate_ode(self.biomodel, SIMULATION_NAME)
+            # one document for the solver and for the math the derived columns are evaluated from: pyvcell's model,
+            # with VCell's rules and events restored and the math generated again
+            vcml = _regenerated(restore(to_vcml_str(bio_model=self.biomodel, regenerate=False), self._kept, self._fast))
+            ode_result = vc.simulate_ode_vcml(vcml, SIMULATION_NAME)
         except Exception as e:
             err_msg = f"VCell's ODE solver failed: {e}"
             raise RuntimeError(err_msg) from e
 
         time = [float(t) for t in ode_result.times]
-        columns = list(ode_result.variable_names)
-        scale = [self._amount_scale.get(name, 1.0) for name in columns]
-        values = [[v * f for v, f in zip(row, scale, strict=True)] for row in ode_result.values.tolist()]
+        # VCell solves a placeholder in math with no ODEs (libvcell >= 0.0.25); it is not the model's
+        solved = {
+            name: ode_result.values[:, i]
+            for i, name in enumerate(ode_result.variable_names)
+            if name != NO_ODE_PLACEHOLDER
+        }
+        names = math_names(vcml, self._reported, self._reported_compartments)
+        derived = derived_columns(math_expressions(vcml), ode_result.times, solved, names)
+        all_columns = {**solved, **derived}
+        columns = list(all_columns)
+        scale = numpy.array([self._amount_scale.get(name, 1.0) for name in columns])
+        matrix = numpy.column_stack([all_columns[name] for name in columns]) * scale
+        values = matrix.tolist()
         if self.config.get("output_dir"):
             DataFrame(data=values, columns=columns).assign(time=time)[["time", *columns]].to_csv(
                 os.path.join(self.config["output_dir"], "results.csv"), index=False
