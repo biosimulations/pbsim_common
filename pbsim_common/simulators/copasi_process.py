@@ -5,6 +5,7 @@ import COPASI
 from basico import (
     get_reactions,
     load_model,
+    remove_datamodel,
     run_steadystate,
     run_time_course,
 )
@@ -12,6 +13,7 @@ from bigraph_schema import Core, allocate_core
 from pandas import DataFrame
 from process_bigraph import Process, Step
 
+from pbsim_common.options import UTCOptions, model_in_file, model_in_text, select_columns
 from pbsim_common.sbml_values import SedmlValues, read_sedml_values
 from pbsim_common.utils import model_path_resolution
 
@@ -90,10 +92,12 @@ class BaseCopasi:
     config: dict[str, Any]
 
     def interpret_sbml(self) -> None:
-        model_source = self.config["model_source"]
+        self._load_sbml(model_path_resolution(self.config["model_source"]), self.config["model_source"])
 
+    def _load_sbml(self, path: str, model_source: str) -> None:
         # ---- Load COPASI model ----
-        path = model_path_resolution(model_source)
+        if self.dm is not None:
+            remove_datamodel(self.dm)
         self.dm = load_model(path)
         if self.dm is None:
             error_msg = (
@@ -130,15 +134,22 @@ class CopasiUTCStep(Step, BaseCopasi):
         "time": "float",
         "n_points": "integer",
         "output_dir": "string",
+        # optional, as viva-copasi names them (pbsim_common.options)
+        "output_times": "maybe[list[float]]",
+        "selections": "maybe[list[string]]",
+        "absolute_tolerance": "maybe[float]",
+        "relative_tolerance": "maybe[float]",
     }
 
     def initialize(self, config: Any = None) -> None:
         self.interpret_sbml()
+        self.options = UTCOptions.from_config(self.config, "CopasiUTCStep")
+        self._model_in: str | None = None
 
         # Simulation parameters
         self.interval = float(self.config.get("time", 1.0))
         self.n_points = int(self.config.get("n_points", 2))  # <-- NEW
-        if self.n_points < 2:
+        if self.n_points < 2 and self.options.output_times is None:
             error_msg = f"n_points={self.n_points} must be >= 2."
             raise ValueError(error_msg)
 
@@ -151,6 +162,7 @@ class CopasiUTCStep(Step, BaseCopasi):
         return {
             "species_concentrations": "map[float]",
             "species_counts": "map[float]",
+            "model_in": "maybe[string]",
         }
 
     def outputs(self) -> dict[str, str]:
@@ -159,6 +171,13 @@ class CopasiUTCStep(Step, BaseCopasi):
         }
 
     def update(self, inputs: Any) -> dict[str, Any]:
+        # A model on `model_in` replaces the configured one
+        text = model_in_text(inputs, self._model_in)
+        if text is not None:
+            with model_in_file(text) as path:
+                self._load_sbml(path, "model_in")
+            self._model_in = text
+
         # Apply incoming concentrations
         spec_data = inputs.get("counts", {}) or {}
         changes = [
@@ -168,16 +187,28 @@ class CopasiUTCStep(Step, BaseCopasi):
         if changes:
             _set_initial_concentrations(changes, self.dm)
 
-        # --- Run COPASI time course with intervals = n_points - 1 ---
+        # --- Run COPASI time course with intervals = n_points - 1, or at the given output times ---
+        options = self.options
+        settings: dict[str, Any] = {}
+        if options.output_times is not None:
+            settings = {"duration": options.output_times[-1], "values": options.output_times}
+        else:
+            settings = {"duration": self.config["time"], "intervals": self.intervals}
+        if options.absolute_tolerance is not None:
+            settings["a_tol"] = options.absolute_tolerance
+        if options.relative_tolerance is not None:
+            settings["r_tol"] = options.relative_tolerance
         tc: DataFrame = run_time_course(
             start_time=0.0,
-            duration=self.config["time"],
-            intervals=self.intervals,
             update_model=True,
             use_sbml_id=True,
             model=self.dm,
+            **settings,
         )
         tc = _as_sedml_reads(_with_every_species(tc, self.species), self.species, self.sedml_values)
+        if options.selections is not None:
+            # basico indexes the time course by time, so `time` is not a column to select
+            tc = select_columns(tc, [s for s in options.selections if s != "time"])
         if "output_dir" in self.config and self.config["output_dir"] != "":
             tc.to_csv(os.path.join(self.config["output_dir"], "results.csv"), index=False)
 
