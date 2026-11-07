@@ -151,6 +151,39 @@ def test_a_fast_reaction_starts_at_its_equilibrium(fully_registered_core: Core, 
     assert math.isclose(vcell["B"][0], 2 / 3, rel_tol=1e-4)
 
 
+EMPTY = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="empty"><listOfFunctionDefinitions><functionDefinition id="foo"/></listOfFunctionDefinitions></model>
+</sbml>
+"""
+
+
+@needs_vcell
+def test_a_model_with_nothing_that_varies_reports_time_alone(fully_registered_core: Core, tmp_path: Path) -> None:
+    model = tmp_path / "empty.xml"
+    model.write_text(EMPTY, encoding="utf-8")
+    vcell = _run(VCellUTCStep, fully_registered_core, model, time=1.0, n_points=3)
+    assert vcell == {"time": [0.0, 0.5, 1.0]}
+
+
+@needs_vcell
+def test_tolerances_reach_the_solver(fully_registered_core: Core, tmp_path: Path) -> None:
+    from pyvcell.vcml.utils import to_vcml_str
+
+    model = tmp_path / "rules_and_events.xml"
+    model.write_text(RULES_AND_EVENTS, encoding="utf-8")
+    config = {"model_source": str(model), "time": 10.0, "n_points": 21, "output_dir": ""}
+    tight = VCellUTCStep(
+        {**config, "absolute_tolerance": 1e-12, "relative_tolerance": 1e-9}, core=fully_registered_core
+    )
+    assert (tight.simulation.absolute_tolerance, tight.simulation.relative_tolerance) == (1e-12, 1e-9)
+    written = to_vcml_str(bio_model=tight.biomodel, regenerate=False)
+    assert "<ErrorTolerance" in written and "e-12" in written
+    default = VCellUTCStep(config, core=fully_registered_core)
+    assert (default.simulation.absolute_tolerance, default.simulation.relative_tolerance) == (1e-9, 1e-7)
+    assert len(tight.update({})["result"]["time"]) == 21
+
+
 VCML = """<vcml xmlns="http://sourceforge.net/projects/vcell/vcml"><BioModel Name="m"><Model Name="m">
 <ModelParameters><Parameter Name="param_x" SbmlName="x">1</Parameter></ModelParameters><Feature Name="C"/></Model>
 <SimulationSpec Name="a"><ReactionContext><ReactionSpec ReactionStepRef="r1" ReactionMapping="fast"/>
