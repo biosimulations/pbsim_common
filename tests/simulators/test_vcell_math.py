@@ -173,15 +173,16 @@ def test_tolerances_reach_the_solver(fully_registered_core: Core, tmp_path: Path
     model = tmp_path / "rules_and_events.xml"
     model.write_text(RULES_AND_EVENTS, encoding="utf-8")
     config = {"model_source": str(model), "time": 10.0, "n_points": 21, "output_dir": ""}
-    tight = VCellUTCStep(
-        {**config, "absolute_tolerance": 1e-12, "relative_tolerance": 1e-9}, core=fully_registered_core
-    )
-    assert (tight.simulation.absolute_tolerance, tight.simulation.relative_tolerance) == (1e-12, 1e-9)
-    written = to_vcml_str(bio_model=tight.biomodel, regenerate=False)
-    assert "<ErrorTolerance" in written and "e-12" in written
+    # unset, tight: VCell does not scale variables as COPASI and Tellurium do
     default = VCellUTCStep(config, core=fully_registered_core)
-    assert (default.simulation.absolute_tolerance, default.simulation.relative_tolerance) == (1e-9, 1e-7)
-    assert len(tight.update({})["result"]["time"]) == 21
+    assert (default.simulation.absolute_tolerance, default.simulation.relative_tolerance) == (1e-12, 1e-9)
+    written = to_vcml_str(bio_model=default.biomodel, regenerate=False)
+    assert "<ErrorTolerance" in written and "e-12" in written
+    looser = VCellUTCStep(
+        {**config, "absolute_tolerance": 1e-8, "relative_tolerance": 1e-6}, core=fully_registered_core
+    )
+    assert (looser.simulation.absolute_tolerance, looser.simulation.relative_tolerance) == (1e-8, 1e-6)
+    assert len(default.update({})["result"]["time"]) == 21
 
 
 VCML = """<vcml xmlns="http://sourceforge.net/projects/vcell/vcml"><BioModel Name="m"><Model Name="m">

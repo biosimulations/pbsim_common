@@ -9,7 +9,9 @@ a constant or a function (one an assignment rule defines, or a boundary species)
 solved time course (pbsim_common.vcell_math), so the step reports what COPASI's and Tellurium's do.
 
 ``absolute_tolerance`` and ``relative_tolerance`` set the solver's error tolerances, named as the COPASI and Tellurium
-steps name them (pbsim_common.options); unset, VCell's defaults (1e-9 and 1e-7) apply.
+steps name them (pbsim_common.options). Unset, they are tight (``ABSOLUTE_TOLERANCE``, ``RELATIVE_TOLERANCE``, what
+vcell-core's own SBML Test Suite harness solves at), not pyvcell's 1e-9 and 1e-7: COPASI and Tellurium scale each
+variable to condition a poorly scaled model, and VCell does not, so a looser tolerance can misbehave on such models.
 """
 
 import os
@@ -36,6 +38,9 @@ from pbsim_common.vcell_math import (
 SIMULATION_NAME = "pbsim_utc"
 #: the variable VCell solves when the math has no ODEs (vcell-core's OdeFileWriter.NO_ODE_PLACEHOLDER)
 NO_ODE_PLACEHOLDER = "__vcell_no_ode__"
+#: the solver's error tolerances when the config sets none (see the module docstring)
+ABSOLUTE_TOLERANCE = 1e-12
+RELATIVE_TOLERANCE = 1e-9
 
 
 def _pyvcell_vcml() -> Any:
@@ -142,10 +147,8 @@ class VCellUTCStep(Step):
         )
         simulation.output_time_step = None
         simulation.output_times = [float(t) for t in numpy.linspace(0.0, self.time, self.n_points)]
-        if self.options.absolute_tolerance is not None:
-            simulation.absolute_tolerance = self.options.absolute_tolerance
-        if self.options.relative_tolerance is not None:
-            simulation.relative_tolerance = self.options.relative_tolerance
+        simulation.absolute_tolerance = self.options.absolute_tolerance or ABSOLUTE_TOLERANCE
+        simulation.relative_tolerance = self.options.relative_tolerance or RELATIVE_TOLERANCE
         self.simulation = simulation
 
         # species by SBML id: VCell's SBML import keeps the ids as its species names
