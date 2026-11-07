@@ -7,6 +7,9 @@ and Tellurium's do. VCell's Combined solver runs CVODE, or IDA when the math has
 VCell's solver outputs the variables it solves. A species or a varying parameter or compartment that VCell's math makes
 a constant or a function (one an assignment rule defines, or a boundary species) is evaluated from the math over the
 solved time course (pbsim_common.vcell_math), so the step reports what COPASI's and Tellurium's do.
+
+``absolute_tolerance`` and ``relative_tolerance`` set the solver's error tolerances, named as the COPASI and Tellurium
+steps name them (pbsim_common.options); unset, VCell's defaults (1e-9 and 1e-7) apply.
 """
 
 import os
@@ -18,6 +21,7 @@ import numpy
 from pandas import DataFrame
 from process_bigraph import Step
 
+from pbsim_common.options import UTCOptions
 from pbsim_common.sbml_values import read_sedml_values
 from pbsim_common.utils import model_path_resolution
 from pbsim_common.vcell_math import (
@@ -84,10 +88,14 @@ class VCellUTCStep(Step):
         "time": "float",
         "n_points": "integer",
         "output_dir": "string",
+        # optional, as the COPASI and Tellurium steps name them (pbsim_common.options)
+        "absolute_tolerance": "maybe[float]",
+        "relative_tolerance": "maybe[float]",
     }
 
     def initialize(self, config: Any = None) -> None:
         vc = _pyvcell_vcml()
+        self.options = UTCOptions.from_config(self.config, "VCellUTCStep")
         model_source = self.config["model_source"]
         try:
             # read as UTF-8 here: COPASI and libroadrunner set the C locale when loaded, which makes Python's default
@@ -134,6 +142,11 @@ class VCellUTCStep(Step):
         )
         simulation.output_time_step = None
         simulation.output_times = [float(t) for t in numpy.linspace(0.0, self.time, self.n_points)]
+        if self.options.absolute_tolerance is not None:
+            simulation.absolute_tolerance = self.options.absolute_tolerance
+        if self.options.relative_tolerance is not None:
+            simulation.relative_tolerance = self.options.relative_tolerance
+        self.simulation = simulation
 
         # species by SBML id: VCell's SBML import keeps the ids as its species names
         self._mappings = {m.species_name: m for m in self.application.species_mappings}
@@ -189,8 +202,9 @@ class VCellUTCStep(Step):
         all_columns = {**solved, **derived}
         columns = list(all_columns)
         scale = numpy.array([self._amount_scale.get(name, 1.0) for name in columns])
-        matrix = numpy.column_stack([all_columns[name] for name in columns]) * scale
-        values = matrix.tolist()
+        # a model with nothing that varies (SBML Test Suite 01271: a function definition only) reports time alone
+        stacked = [all_columns[name] for name in columns] or [numpy.empty((len(time), 0))]
+        values = (numpy.column_stack(stacked) * scale).tolist()
         if self.config.get("output_dir"):
             DataFrame(data=values, columns=columns).assign(time=time)[["time", *columns]].to_csv(
                 os.path.join(self.config["output_dir"], "results.csv"), index=False
