@@ -230,3 +230,15 @@ def test_derived_columns_evaluate_the_math_by_sbml_id() -> None:
     assert columns["S2"].tolist() == [2.0, 5.0, 10.0]
     assert columns["S3"].tolist() == [6.0, 6.0, 6.0], "factorial, which numexpr has not, one time point at a time"
     assert columns["C"].tolist() == [3.0, 3.0, 3.0]
+
+
+@needs_vcell
+def test_an_expression_with_more_inputs_than_numexpr_takes_is_evaluated() -> None:
+    import numpy
+
+    # SBML Test Suite 01466 sums 100 parameters in one assignment rule; numexpr refuses ("too many inputs")
+    names = [f"A{i}" for i in range(100)]
+    times = numpy.array([0.0, 1.0])
+    solved = {name: numpy.array([1.0, 2.0]) for name in names}
+    columns = derived_columns({"Asum": " + ".join(names)}, times, solved, {"Asum": "Asum"})
+    assert columns["Asum"].tolist() == [100.0, 200.0]

@@ -182,8 +182,12 @@ def _column(expression: str, table: Mapping[str, NDArray[numpy.float64]], n: int
 
     ok, message, translated = libvcell.vcell_infix_to_num_expr_infix(expression)
     if ok:
-        result: NDArray[numpy.float64] = numexpr.evaluate(_numexpr_syntax(translated), local_dict=dict(table))
-        return result
+        try:
+            result: NDArray[numpy.float64] = numexpr.evaluate(_numexpr_syntax(translated), local_dict=dict(table))
+        except ValueError as e:  # numexpr takes at most a few dozen inputs ("too many inputs"; 01466 sums 100)
+            message = str(e)
+        else:
+            return result
     logger.info("VCell: evaluating %r one time point at a time (%s)", expression, message)
     return numpy.array([
         libvcell.evaluate_expression(expression, {s: float(v[i]) for s, v in table.items()}) for i in range(n)
